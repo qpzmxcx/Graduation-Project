@@ -1,85 +1,203 @@
-import cv2
-import os
+from PyQt5 import QtCore, QtGui, QtWidgets
+import sys
+import serial
+import time
+import pyqtgraph as pg
 
-# 打开 USB 摄像头
-cap = cv2.VideoCapture(0)
-output_folder = './output_frames/'
+class Ui_MainWindow(object):
+    def setupUi(self, MainWindow):
+        MainWindow.setObjectName("MainWindow")
+        MainWindow.resize(800, 600)
+        self.centralwidget = QtWidgets.QWidget(MainWindow)
+        self.centralwidget.setObjectName("centralwidget")
+        self.pushButton = QtWidgets.QPushButton(self.centralwidget)
+        self.pushButton.setGeometry(QtCore.QRect(620, 80, 75, 25))
+        self.pushButton.setObjectName("pushButton")
+        self.pushButton_2 = QtWidgets.QPushButton(self.centralwidget)
+        self.pushButton_2.setGeometry(QtCore.QRect(620, 130, 75, 25))
+        self.pushButton_2.setObjectName("pushButton_2")
+        self.pushButton_3 = QtWidgets.QPushButton(self.centralwidget)
+        self.pushButton_3.setGeometry(QtCore.QRect(620, 180, 75, 25))
+        self.pushButton_3.setObjectName("pushButton_3")
+        self.pushButton_4 = QtWidgets.QPushButton(self.centralwidget)
+        self.pushButton_4.setGeometry(QtCore.QRect(620, 230, 75, 25))
+        self.pushButton_4.setObjectName("pushButton_4")
+        self.pushButton_5 = QtWidgets.QPushButton(self.centralwidget)
+        self.pushButton_5.setGeometry(QtCore.QRect(620, 30, 75, 25))
+        self.pushButton_5.setObjectName("pushButton_5")
+        self.pushButton_6 = QtWidgets.QPushButton(self.centralwidget)
+        self.pushButton_6.setGeometry(QtCore.QRect(620, 280, 75, 25))
+        self.pushButton_6.setObjectName("pushButton_6")
+        self.pushButton_7 = QtWidgets.QPushButton(self.centralwidget)
+        self.pushButton_7.setGeometry(QtCore.QRect(620, 330, 75, 25))
+        self.pushButton_7.setObjectName("pushButton_7")
+        self.textBrowser = QtWidgets.QTextBrowser(self.centralwidget)
+        self.textBrowser.setGeometry(QtCore.QRect(40, 450, 700, 100))
+        self.textBrowser.setObjectName("textBrowser")
+        self.pushButton_8 = QtWidgets.QPushButton(self.centralwidget)
+        self.pushButton_8.setGeometry(QtCore.QRect(620, 380, 75, 25))
+        self.pushButton_8.setObjectName("pushButton_8")
+        MainWindow.setCentralWidget(self.centralwidget)
+        self.statusbar = QtWidgets.QStatusBar(MainWindow)
+        self.statusbar.setObjectName("statusbar")
+        MainWindow.setStatusBar(self.statusbar)
 
-# 检查摄像头是否成功打开
-if not cap.isOpened():
-    print("Error: Could not open camera.")
-    exit()
+        self.retranslateUi(MainWindow)
+        QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
-# 设置分辨率为 4K (3840x2160)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
+        # 信号槽绑定
+        self.pushButton_8.clicked.connect(QtWidgets.QApplication.quit)
+        self.pushButton_5.clicked.connect(self.communication_test)
+        self.pushButton.clicked.connect(self.start_detection)
+        self.pushButton_2.clicked.connect(self.stop_detection)
+        self.pushButton_3.clicked.connect(self.zoom_in_waveform)
+        self.pushButton_4.clicked.connect(self.zoom_out_waveform)
+        self.pushButton_6.clicked.connect(self.save_waveform)
+        self.pushButton_7.clicked.connect(self.replay_waveform)
+        
+        # 初始化类属性
+        self.ser = None
+        self.is_detecting = False
+        self.read_timer = QtCore.QTimer()
+        self.read_timer.timeout.connect(self.read_serial_data)
 
-# 定义视频编码方式和输出文件名
-fourcc = cv2.VideoWriter_fourcc(*'MJPG')  # MJPEG 编码器，通常支持较高分辨率
-out = cv2.VideoWriter('./output_videos/output.avi', fourcc, 30.0, (3840, 2160))  # 输出文件名，帧率30.0，分辨率3840x2160
+
+    def retranslateUi(self, MainWindow):
+        _translate = QtCore.QCoreApplication.translate
+        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        self.pushButton.setText(_translate("MainWindow", "开始检测"))
+        self.pushButton_2.setText(_translate("MainWindow", "停止检测"))
+        self.pushButton_3.setText(_translate("MainWindow", "放大波形"))
+        self.pushButton_4.setText(_translate("MainWindow", "缩小波形"))
+        self.pushButton_5.setText(_translate("MainWindow", "通信测试"))
+        self.pushButton_6.setText(_translate("MainWindow", "保存波形"))
+        self.pushButton_7.setText(_translate("MainWindow", "回放波形"))
+        self.pushButton_8.setText(_translate("MainWindow", "退出程序"))
+
+    def communication_test(self):
+        ser = serial.Serial(port="COM8",
+                            baudrate=9600,
+                            parity=serial.PARITY_NONE,
+                            bytesize=serial.EIGHTBITS,
+                            stopbits=serial.STOPBITS_ONE,
+                            timeout=0)
+        # 发送0x01指令
+        ser.write(b'\x01')
+        time.sleep(0.5)
+        # 读取返回1个字节数据
+        reply = ser.read(10)
+        print(reply)
+        # 如果reply中包含0x00或者0x01，则测试成功
+        if b'\x00' in reply or b'\x01' in reply:
+            self.textBrowser.append("通信测试成功")
+            self.textBrowser.append("串口数据如下：端口号: " + ser.portstr + " 波特率: " + str(ser.baudrate) + " 停止位: " + str(ser.stopbits) + " 校验位: " + str(ser.parity) + " 数据位: " + str(ser.bytesize))
+            ser.write(b'\x00')
+        else:
+            self.textBrowser.append("通信测试失败")
+            self.textBrowser.append("返回数据: " + str(reply))
+            ser.write(b'\x00')
+        ser.close()
+
+    def start_detection(self):
+        # 清除文本框
+        self.textBrowser.clear()
+        # 如果已经在检测中，则直接返回
+        if self.is_detecting:
+            self.textBrowser.append("已经在检测中...")
+            return
+            
+        try:
+            # 创建串口对象
+            self.ser = serial.Serial(
+                port="COM8",
+                baudrate=9600,
+                parity=serial.PARITY_NONE,
+                bytesize=serial.EIGHTBITS,
+                stopbits=serial.STOPBITS_ONE,
+                timeout=0
+            )
+            
+            # 发送0x01指令开始数据采集
+            self.ser.write(b'\x01')
+            
+            # 设置检测状态为True
+            self.is_detecting = True
+            
+            # 启动定时器，每100ms读取一次数据
+            self.read_timer.start(100)
+            
+            self.textBrowser.append("开始检测...")
+            self.pushButton.setEnabled(False)  # 禁用开始按钮
+            self.pushButton_2.setEnabled(True)  # 启用停止按钮
+            
+        except Exception as e:
+            self.textBrowser.append(f"开始检测失败: {str(e)}")
+            if self.ser and self.ser.is_open:
+                self.ser.close()
+                self.ser = None
+
+    def read_serial_data(self):
+        """串口数据读取函数，由定时器触发"""
+        if not self.ser or not self.is_detecting:
+            return
+            
+        try:
+            # 读取可用的串口数据
+            if self.ser.in_waiting:
+                data = self.ser.read(self.ser.in_waiting)
+                if data:
+                    # 这里可以处理接收到的数据，比如更新波形图等
+                    self.textBrowser.append(f"接收数据: {data.hex()}")
+        except Exception as e:
+            self.textBrowser.append(f"读取数据错误: {str(e)}")
+            self.stop_detection()
+
+    def stop_detection(self):
+        # 清除文本框
+        self.textBrowser.clear()
+        # 停止定时器
+        self.read_timer.stop()
+        
+        # 如果串口已打开，发送停止命令并关闭
+        if self.ser and self.ser.is_open:
+            try:
+                self.ser.write(b'\x00')  # 发送停止命令
+                time.sleep(0.1)
+                self.ser.close()
+            except Exception as e:
+                self.textBrowser.append(f"关闭串口错误: {str(e)}")
+            finally:
+                self.ser = None
+        
+        # 重置检测状态
+        self.is_detecting = False
+        
+        # 更新UI
+        self.textBrowser.append("停止检测")
+        self.pushButton.setEnabled(True)   # 启用开始按钮
+        self.pushButton_2.setEnabled(False)  # 禁用停止按钮
+
+    def zoom_in_waveform(self):
+        pass
+
+    def zoom_out_waveform(self):
+        pass
+
+    def save_waveform(self):
+        pass
+
+    def replay_waveform(self):
+        pass
 
 
-frames_to_save = 201  # 每个视频保存 100 帧（大约 5 秒）
-time_total = frames_to_save / 20
-
-for _ in range(frames_to_save):
-    ret, frame = cap.read()  # 读取帧
-    if not ret:  # 如果读取失败，退出
-        break
-    out.write(frame)  # 保存帧
-
-print(f"successfully saved{time_total}Second video")
-
-out.release()
-cap.release()
-cv2.destroyAllWindows()
-
-# 视频文件路径
-video_path = './output_videos/output.avi'
-
-# 需要截取的帧数列表
-frame_1 = frames_to_save / 4 * 1 - 1
-frame_2 = frames_to_save / 4 * 2 - 1
-frame_3 = frames_to_save / 4 * 3 - 1
-frame_4 = frames_to_save / 4 * 4 - 1
-frame_numbers = [frame_1, frame_2, frame_3, frame_4]  # 例如特定帧率
-
-# 打开视频文件
-cap = cv2.VideoCapture(video_path)
-
-# 检查视频是否成功打开
-if not cap.isOpened():
-    print("Error: Could not open video.")
-    exit()
-
-# 获取视频的总帧数
-total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-print(f"Total frames in the video: {total_frames}")
-
-frame_num0 = 0
-
-# 遍历所有需要的帧数
-for frame_num in frame_numbers:
-    # 确保帧数在有效范围内
-    if frame_num >= total_frames:
-        print(f"Frame {frame_num} is out of range.")
-        continue
-
-    # 定位到指定帧
-    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-
-    # 读取指定帧
-    ret, frame = cap.read()
-
-    # 如果读取成功，保存帧为图片
-    if ret:
-        # 保存图片，文件名为：frame_帧数.jpg
-        frame_filename = os.path.join(output_folder, f"frame_{frame_num0}.jpg")
-        cv2.imwrite(frame_filename, frame)
-        print(f"Frame {frame_num0} saved as {frame_filename}")
-        frame_num0 += 1
-    else:
-        print(f"Failed to read frame {frame_num0}")
-
-# 释放资源并关闭窗口
-cap.release()
+if __name__ == "__main__":
+    if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
+        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+    if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
+        QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+    app = QtWidgets.QApplication(sys.argv)
+    MainWindow = QtWidgets.QMainWindow()
+    ui = Ui_MainWindow()
+    ui.setupUi(MainWindow)
+    MainWindow.show()
+    sys.exit(app.exec_())
